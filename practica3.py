@@ -31,9 +31,21 @@ def haversine(lat1, lon1, lat2, lon2):
     
     distancia = R * c
     return distancia
-
+    
 def ejecutar_query_sqlite(database_name, table_name, columns='*', where_column=None, where_value=None):
+    """
+    Ejecuta una consulta SQL en una base de datos SQLite y retorna una lista con los resultados.
 
+    Parámetros:
+    database_name (str): Nombre del archivo de la base de datos SQLite.
+    table_name (str): Nombre de la tabla para realizar la consulta.
+    columns (str): Columnas a seleccionar (por defecto es '*').
+    where_column (str): Nombre de la columna para la cláusula WHERE (opcional).
+    where_value (any): Valor para la cláusula WHERE (opcional).
+
+    Retorna:
+    list: Lista con los resultados de la consulta.
+    """
     # Conectar a la base de datos SQLite
     conn = sqlite3.connect(database_name)
     cursor = conn.cursor()
@@ -55,7 +67,14 @@ def ejecutar_query_sqlite(database_name, table_name, columns='*', where_column=N
     return resultados
 
 def agregar_df_a_sqlite(df, database_name, table_name):
+    """
+    Agrega un DataFrame a una tabla SQLite.
 
+    Parámetros:
+    df (pd.DataFrame): DataFrame a agregar a la base de datos.
+    database_name (str): Nombre del archivo de la base de datos SQLite.
+    table_name (str): Nombre de la tabla donde se insertará el DataFrame.
+    """
     # Conectar a la base de datos SQLite
     conn = sqlite3.connect(database_name)
     
@@ -74,64 +93,39 @@ def get_country_city(lat,long):
 def utm_to_latlong(easting, northing, zone_number, zone_letter):
     # Crear el proyector UTM
     utm_proj = pyproj.Proj(proj='utm', zone=zone_number, datum='WGS84')
+    
     # Convertir UTM a latitud y longitud
     longitude, latitude = utm_proj(easting, northing, inverse=True)
     return round(latitude,2), round(longitude,2)
-
+def insertar_data(data:list):
+    pass
     #necesitamos convertir las coordenadas UTM a lat long
-def combo_event(value):
-    """
-    Maneja la selección de un valor en el ComboBox.
-    Obtiene la dirección correspondiente y centra el mapa en esa posición.
-    """
-    try:
-        # Elimina el marcador anterior si existe
-        global marker_1
-        if 'marker_1' in globals():
-            marker_1.delete()
-    except NameError:
-        pass
-
-    # Obtiene la dirección y la convierte a coordenadas
-    address = value  # Asume que el valor seleccionado es una dirección
-    coordinates = tkintermapview.convert_address_to_coordinates(address)
-    if coordinates:
-        # Centra el mapa en la posición obtenida
-        latitude, longitude = coordinates
-        map_widget.set_position(latitude, longitude)
-        marker_1 = map_widget.set_marker(latitude, longitude, text=address)
-    else:
-        print(f"No se pudieron obtener coordenadas para la dirección: {address}")
-
 def combo_event2(value):
-    """
-    Maneja la selección de un valor en el ComboBox.
-    Obtiene las coordenadas de una persona específica a partir de su RUT y actualiza el mapa.
-    """
     try:
-        # Elimina el marcador anterior si existe
-        global marker_2
-        if 'marker_2' in globals():
-            marker_2.delete()
+        marker_2.delete()
     except NameError:
         pass
-
-    # Ejecuta la consulta SQL para obtener las coordenadas
-    result = ejecutar_query_sqlite('progra2024_final.db', 'personas_coordenadas', columns='Latitude,Longitude,Nombre,Apellido', where_column='RUT', where_value=value)
-
-    if result:
-        latitude, longitude, nombre, apellido = result[0]
-        nombre_apellido = f"{nombre} {apellido}"
-        marker_2 = map_widget.set_marker(latitude, longitude, text=nombre_apellido)
-    else:
-        print(f"No se encontraron resultados para el RUT: {value}")
-
+    result=ejecutar_query_sqlite('progra2024_final.db', 'personas_coordenadas',columns='Latitude,Longitude,Nombre,Apellido', where_column='RUT', where_value=value)
+    nombre_apellido=str(result[0][2])+' '+str(result[0][3])
+    marker_2 = map_widget.set_marker(result[0][0], result[0][1], text=nombre_apellido)
+   
+    
+def combo_event(value):
+    pass
+    #mapas.set_address("moneda, santiago, chile")
+    #mapas.set_position(48.860381, 2.338594)  # Paris, France
+    #mapas.set_zoom(15)
+    #address = tkintermapview.convert_address_to_coordinates("London")
+    #print(address)
+def center_window(window, width, height):
+    # Obtener el tamaño de la ventana principal
     root.update_idletasks()
     root_width = root.winfo_width()
     root_height = root.winfo_height()
     root_x = root.winfo_x()
     root_y = root.winfo_y()
 
+    # Calcular la posición para centrar la ventana secundaria
     x = root_x + (root_width // 2) - (width // 2)
     y = root_y + (root_height // 2) - (height // 2)
 
@@ -147,14 +141,8 @@ def setup_toplevel(window):
 
     label = ctk.CTkLabel(window, text="ToplevelWindow")
     label.pack(padx=20, pady=20)
-def calcular_distancia(RUT1, RUT2):
-    # Aquí debes definir cómo obtener las coordenadas (latitud y longitud) a partir de los RUTs
-    lat1, lon1 = distancia(RUT1)  # Esta es una función ficticia que debes implementar
-    lat2, lon2 = distancia(RUT2)  # Esta es una función ficticia que debes implementar
-
-    distancia = haversine(lat1, lon1, lat2, lon2)
-    return distancia
-
+def calcular_distancia(RUT1,RUT2):
+    pass
 def guardar_data(row_selector):
     print(row_selector.get())
     print(row_selector.table.values)
@@ -169,8 +157,11 @@ def editar_panel(root):
 def seleccionar_archivo():
     archivo = filedialog.askopenfilename(filetypes=[("Archivos CSV", "*.csv")])
     if archivo:
-        print(f"Archivo seleccionado: {archivo}")
-        mostrar_datos(archivo)
+        try:
+            datos = pd.read_csv(archivo)
+            mostrar_datos(datos)
+        except Exception as e:
+            CTkMessagebox(title="Error", message=f"Error al leer el archivo CSV: {e}")
 def on_scrollbar_move(*args):
     canvas.yview(*args)
     canvas.bbox("all")
@@ -183,17 +174,43 @@ def leer_archivo_csv(ruta_archivo):
 
 # Función para mostrar los datos en la tabla
 def mostrar_datos(datos):
-    # Botón para imprimir las filas seleccionadas
-    boton_imprimir = ctk.CTkButton(
-        master=home_frame, text="guardar informacion", command=lambda: guardar_data())
-    boton_imprimir.grid(row=2, column=0, pady=(0, 20))
-    
-    # Botón para imprimir las filas seleccionadas
-    boton_imprimir = ctk.CTkButton(master=data_panel_superior, text="modificar dato", command=lambda: editar_panel(root))
-    boton_imprimir.grid(row=0 , column=2, pady=(0, 0))
-    # Botón para imprimir las filas seleccionadas
-    boton_imprimir = ctk.CTkButton(master=data_panel_superior, text="Eliminar dato", command=lambda: editar_panel(root),fg_color='purple',hover_color='red')
-    boton_imprimir.grid(row=0, column=3, padx=(10, 0))
+    if not isinstance(datos, pd.DataFrame):
+        CTkMessagebox(title="Error", message="Los datos no están en el formato correcto.")
+        return
+
+    # Limpiar el frame scrollable si ya contiene widgets
+    for widget in scrollable_frame.winfo_children():
+        widget.destroy()
+
+    # Crear la tabla
+    table = CTkTable(master=scrollable_frame, 
+                     values=[datos.columns.tolist()] + datos.values.tolist(),
+                     header_color="gray70",
+                     hover_color="gray90")
+    table.pack(expand=True, fill="both", padx=10, pady=10)
+
+    # Crear el selector de filas
+    row_selector = CTkTableRowSelector(table)
+
+    # Actualizar las funciones de los botones existentes
+    home_frame_cargar_datos.configure(command=lambda: guardar_data(row_selector, datos))
+    modificar_dato.configure(command=lambda: modificar_dato(row_selector, datos))
+    eliminar_dato.configure(command=lambda: eliminar_dato(row_selector, datos))
+def eliminar_dato(row_selector, datos):
+    selected_rows = row_selector.get()
+    if selected_rows:
+        # Implementa la lógica para eliminar datos aquí
+        print("Filas seleccionadas para eliminar:", selected_rows)
+    else:
+        CTkMessagebox(title="Aviso", message="No se han seleccionado filas para eliminar.")
+def modificar_dato(row_selector, datos):
+    selected_rows = row_selector.get()
+    if selected_rows:
+        # Implementa la lógica para modificar datos aquí
+        print("Filas seleccionadas para modificar:", selected_rows)
+    else:
+        CTkMessagebox(title="Aviso", message="No se han seleccionado filas para modificar.")
+
 def select_frame_by_name(name):
     home_button.configure(fg_color=("gray75", "gray25") if name == "home" else "transparent")
     frame_2_button.configure(fg_color=("gray75", "gray25") if name == "frame_2" else "transparent")
@@ -216,10 +233,10 @@ def home_button_event():
     select_frame_by_name("home")
 
 def frame_2_button_event():
-    select_frame_by_name("frame_2")
+    select_frame_by_name("graficos")
 
 def frame_3_button_event():
-    select_frame_by_name("frame_3")
+    select_frame_by_name("geolocalizacion")
 
 def change_appearance_mode_event(new_appearance_mode):
     ctk.set_appearance_mode(new_appearance_mode)
@@ -391,6 +408,10 @@ label_rut.grid(row=0, column=0, padx=5, pady=5)
 optionmenu_1 = ctk.CTkOptionMenu(third_frame_top, dynamic_resizing=True,
                                                         values=["Value 1", "Value 2", "Value Long Long Long"],command=lambda value:combo_event(value))
 optionmenu_1.grid(row=0, column=1, padx=5, pady=(5, 5))
+
+
+
+
 
 
 # Seleccionar el marco predeterminado

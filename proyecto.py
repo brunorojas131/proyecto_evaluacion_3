@@ -16,24 +16,22 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
 
 def haversine(lat1, lon1, lat2, lon2):
-    # Función para calcular la distancia entre 2 puntos a partir de la longitud y latitud
-    R = 6371.0  # Radio de la Tierra en kilómetros
-    lat1_rad = math.radians(lat1)
-    lon1_rad = math.radians(lon1)
-    lat2_rad = math.radians(lat2)
-    lon2_rad = math.radians(lon2)
-    
-    dlat = lat2_rad - lat1_rad
-    dlon = lon2_rad - lon1_rad
-
-    a = math.sin(dlat / 2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    
-    distancia = R * c
-    return distancia
-
+    #Función para calcular la distancia entre 2 puntos a partir de la longitud
+    pass
 def ejecutar_query_sqlite(database_name, table_name, columns='*', where_column=None, where_value=None):
+    """
+    Ejecuta una consulta SQL en una base de datos SQLite y retorna una lista con los resultados.
 
+    Parámetros:
+    database_name (str): Nombre del archivo de la base de datos SQLite.
+    table_name (str): Nombre de la tabla para realizar la consulta.
+    columns (str): Columnas a seleccionar (por defecto es '*').
+    where_column (str): Nombre de la columna para la cláusula WHERE (opcional).
+    where_value (any): Valor para la cláusula WHERE (opcional).
+
+    Retorna:
+    list: Lista con los resultados de la consulta.
+    """
     # Conectar a la base de datos SQLite
     conn = sqlite3.connect(database_name)
     cursor = conn.cursor()
@@ -55,7 +53,14 @@ def ejecutar_query_sqlite(database_name, table_name, columns='*', where_column=N
     return resultados
 
 def agregar_df_a_sqlite(df, database_name, table_name):
+    """
+    Agrega un DataFrame a una tabla SQLite.
 
+    Parámetros:
+    df (pd.DataFrame): DataFrame a agregar a la base de datos.
+    database_name (str): Nombre del archivo de la base de datos SQLite.
+    table_name (str): Nombre de la tabla donde se insertará el DataFrame.
+    """
     # Conectar a la base de datos SQLite
     conn = sqlite3.connect(database_name)
     
@@ -74,64 +79,39 @@ def get_country_city(lat,long):
 def utm_to_latlong(easting, northing, zone_number, zone_letter):
     # Crear el proyector UTM
     utm_proj = pyproj.Proj(proj='utm', zone=zone_number, datum='WGS84')
+    
     # Convertir UTM a latitud y longitud
     longitude, latitude = utm_proj(easting, northing, inverse=True)
     return round(latitude,2), round(longitude,2)
-
+def insertar_data(data:list):
+    pass
     #necesitamos convertir las coordenadas UTM a lat long
-def combo_event(value):
-    """
-    Maneja la selección de un valor en el ComboBox.
-    Obtiene la dirección correspondiente y centra el mapa en esa posición.
-    """
-    try:
-        # Elimina el marcador anterior si existe
-        global marker_1
-        if 'marker_1' in globals():
-            marker_1.delete()
-    except NameError:
-        pass
-
-    # Obtiene la dirección y la convierte a coordenadas
-    address = value  # Asume que el valor seleccionado es una dirección
-    coordinates = tkintermapview.convert_address_to_coordinates(address)
-    if coordinates:
-        # Centra el mapa en la posición obtenida
-        latitude, longitude = coordinates
-        map_widget.set_position(latitude, longitude)
-        marker_1 = map_widget.set_marker(latitude, longitude, text=address)
-    else:
-        print(f"No se pudieron obtener coordenadas para la dirección: {address}")
-
 def combo_event2(value):
-    """
-    Maneja la selección de un valor en el ComboBox.
-    Obtiene las coordenadas de una persona específica a partir de su RUT y actualiza el mapa.
-    """
     try:
-        # Elimina el marcador anterior si existe
-        global marker_2
-        if 'marker_2' in globals():
-            marker_2.delete()
+        marker_2.delete()
     except NameError:
         pass
-
-    # Ejecuta la consulta SQL para obtener las coordenadas
-    result = ejecutar_query_sqlite('progra2024_final.db', 'personas_coordenadas', columns='Latitude,Longitude,Nombre,Apellido', where_column='RUT', where_value=value)
-
-    if result:
-        latitude, longitude, nombre, apellido = result[0]
-        nombre_apellido = f"{nombre} {apellido}"
-        marker_2 = map_widget.set_marker(latitude, longitude, text=nombre_apellido)
-    else:
-        print(f"No se encontraron resultados para el RUT: {value}")
-
+    result=ejecutar_query_sqlite('progra2024_final.db', 'personas_coordenadas',columns='Latitude,Longitude,Nombre,Apellido', where_column='RUT', where_value=value)
+    nombre_apellido=str(result[0][2])+' '+str(result[0][3])
+    marker_2 = map_widget.set_marker(result[0][0], result[0][1], text=nombre_apellido)
+   
+    
+def combo_event(value):
+    pass
+    #mapas.set_address("moneda, santiago, chile")
+    #mapas.set_position(48.860381, 2.338594)  # Paris, France
+    #mapas.set_zoom(15)
+    #address = tkintermapview.convert_address_to_coordinates("London")
+    #print(address)
+def center_window(window, width, height):
+    # Obtener el tamaño de la ventana principal
     root.update_idletasks()
     root_width = root.winfo_width()
     root_height = root.winfo_height()
     root_x = root.winfo_x()
     root_y = root.winfo_y()
 
+    # Calcular la posición para centrar la ventana secundaria
     x = root_x + (root_width // 2) - (width // 2)
     y = root_y + (root_height // 2) - (height // 2)
 
@@ -147,14 +127,8 @@ def setup_toplevel(window):
 
     label = ctk.CTkLabel(window, text="ToplevelWindow")
     label.pack(padx=20, pady=20)
-def calcular_distancia(RUT1, RUT2):
-    # Aquí debes definir cómo obtener las coordenadas (latitud y longitud) a partir de los RUTs
-    lat1, lon1 = distancia(RUT1)  # Esta es una función ficticia que debes implementar
-    lat2, lon2 = distancia(RUT2)  # Esta es una función ficticia que debes implementar
-
-    distancia = haversine(lat1, lon1, lat2, lon2)
-    return distancia
-
+def calcular_distancia(RUT1,RUT2):
+    pass
 def guardar_data(row_selector):
     print(row_selector.get())
     print(row_selector.table.values)
@@ -189,10 +163,13 @@ def mostrar_datos(datos):
     boton_imprimir.grid(row=2, column=0, pady=(0, 20))
     
     # Botón para imprimir las filas seleccionadas
-    boton_imprimir = ctk.CTkButton(master=data_panel_superior, text="modificar dato", command=lambda: editar_panel(root))
-    boton_imprimir.grid(row=0 , column=2, pady=(0, 0))
+    boton_imprimir = ctk.CTkButton(
+        master=data_panel_superior, text="modificar dato", command=lambda: editar_panel(root))
+    boton_imprimir.grid(row=0, column=2, pady=(0, 0))
+
     # Botón para imprimir las filas seleccionadas
-    boton_imprimir = ctk.CTkButton(master=data_panel_superior, text="Eliminar dato", command=lambda: editar_panel(root),fg_color='purple',hover_color='red')
+    boton_imprimir = ctk.CTkButton(
+        master=data_panel_superior, text="Eliminar dato", command=lambda: editar_panel(root),fg_color='purple',hover_color='red')
     boton_imprimir.grid(row=0, column=3, padx=(10, 0))
 def select_frame_by_name(name):
     home_button.configure(fg_color=("gray75", "gray25") if name == "home" else "transparent")
@@ -391,6 +368,10 @@ label_rut.grid(row=0, column=0, padx=5, pady=5)
 optionmenu_1 = ctk.CTkOptionMenu(third_frame_top, dynamic_resizing=True,
                                                         values=["Value 1", "Value 2", "Value Long Long Long"],command=lambda value:combo_event(value))
 optionmenu_1.grid(row=0, column=1, padx=5, pady=(5, 5))
+
+
+
+
 
 
 # Seleccionar el marco predeterminado

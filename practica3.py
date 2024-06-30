@@ -67,22 +67,10 @@ def ejecutar_query_sqlite(database_name, table_name, columns='*', where_column=N
     return resultados
 
 def agregar_df_a_sqlite(df, database_name, table_name):
-    """
-    Agrega un DataFrame a una tabla SQLite.
-
-    Parámetros:
-    df (pd.DataFrame): DataFrame a agregar a la base de datos.
-    database_name (str): Nombre del archivo de la base de datos SQLite.
-    table_name (str): Nombre de la tabla donde se insertará el DataFrame.
-    """
-    # Conectar a la base de datos SQLite
     conn = sqlite3.connect(database_name)
-    
-    # Agregar el DataFrame a la tabla SQLite
-    df.to_sql(table_name, conn, if_exists='replace', index=False)
-    
-    # Cerrar la conexión
+    df.to_sql(table_name, conn, if_exists='append', index=False)
     conn.close()
+
 #documentacion=https://github.com/TomSchimansky/TkinterMapView?tab=readme-ov-file#create-path-from-position-list
 def get_country_city(lat,long):
     country = tkintermapview.convert_coordinates_to_country(lat, long)
@@ -143,9 +131,16 @@ def setup_toplevel(window):
     label.pack(padx=20, pady=20)
 def calcular_distancia(RUT1,RUT2):
     pass
-def guardar_data(row_selector):
-    print(row_selector.get())
-    print(row_selector.table.values)
+def guardar_data():
+    global datos_globales
+    if datos_globales is not None:
+        try:
+            agregar_df_a_sqlite(datos_globales, 'progra2024_final.db', 'personas_coordenadas')
+            CTkMessagebox(title="Éxito", message="Datos guardados correctamente en la base de datos.")
+        except Exception as e:
+            CTkMessagebox(title="Error", message=f"Error al guardar los datos: {str(e)}")
+    else:
+        CTkMessagebox(title="Aviso", message="No hay datos para guardar. Por favor, cargue un archivo CSV primero.")
 def editar_panel(root):
     global toplevel_window
     if toplevel_window is None or not toplevel_window.winfo_exists():
@@ -192,24 +187,77 @@ def mostrar_datos(datos):
     # Crear el selector de filas
     row_selector = CTkTableRowSelector(table)
 
-    # Actualizar las funciones de los botones existentes
-    home_frame_cargar_datos.configure(command=lambda: guardar_data(row_selector, datos))
-    modificar_dato.configure(command=lambda: modificar_dato(row_selector, datos))
-    eliminar_dato.configure(command=lambda: eliminar_dato(row_selector, datos))
+    # Actualizar las funciones de los botones de modificar y eliminar
+    global datos_globales  # Usar una variable global para mantener los datos
+    datos_globales = datos
+    
+    boton_modificar.configure(command=lambda: modificar_dato(row_selector, datos_globales))
+    boton_eliminar.configure(command=lambda: eliminar_dato(row_selector, datos_globales))
+
 def eliminar_dato(row_selector, datos):
     selected_rows = row_selector.get()
     if selected_rows:
-        # Implementa la lógica para eliminar datos aquí
-        print("Filas seleccionadas para eliminar:", selected_rows)
+        if isinstance(selected_rows[0], list):
+            # Si selected_rows contiene listas, aplanamos la estructura
+            indices_to_delete = [item for sublist in selected_rows for item in sublist]
+        else:
+            indices_to_delete = selected_rows
+
+        # Convertir índices seleccionados a índices de DataFrame (restando 1)
+        indices_to_delete = [i-1 for i in indices_to_delete]
+        
+        # Eliminar las filas seleccionadas
+        datos.drop(datos.index[indices_to_delete], inplace=True)
+        
+        # Resetear el índice del DataFrame
+        datos.reset_index(drop=True, inplace=True)
+        
+        # Actualizar la tabla
+        mostrar_datos(datos)
+        
+        CTkMessagebox(title="Éxito", message=f"Se han eliminado {len(indices_to_delete)} filas.")
     else:
         CTkMessagebox(title="Aviso", message="No se han seleccionado filas para eliminar.")
 def modificar_dato(row_selector, datos):
     selected_rows = row_selector.get()
     if selected_rows:
-        # Implementa la lógica para modificar datos aquí
-        print("Filas seleccionadas para modificar:", selected_rows)
+        if isinstance(selected_rows[0], list):
+            # Si selected_rows[0] es una lista, tomamos el primer elemento
+            row_index = selected_rows[0][0] - 1
+        else:
+            # Si es un número, lo usamos directamente
+            row_index = selected_rows[0] - 1
+
+        if len(selected_rows) > 1:
+            CTkMessagebox(title="Aviso", message="Por favor, seleccione solo una fila para modificar.")
+            return
+        
+        row_data = datos.iloc[row_index]
+
+        # Crear una nueva ventana para editar los datos
+        edit_window = ctk.CTkToplevel()
+        edit_window.title("Modificar Dato")
+        edit_window.geometry("400x300")
+
+        # Crear campos de entrada para cada columna
+        entries = {}
+        for i, (column, value) in enumerate(row_data.items()):
+            ctk.CTkLabel(edit_window, text=column).grid(row=i, column=0, padx=5, pady=5)
+            entry = ctk.CTkEntry(edit_window)
+            entry.insert(0, str(value))
+            entry.grid(row=i, column=1, padx=5, pady=5)
+            entries[column] = entry
+
+        def save_changes():
+            for column, entry in entries.items():
+                datos.at[row_index, column] = entry.get()
+            edit_window.destroy()
+            mostrar_datos(datos)  # Actualizar la tabla
+            CTkMessagebox(title="Éxito", message="Dato modificado correctamente")
+
+        ctk.CTkButton(edit_window, text="Guardar Cambios", command=save_changes).grid(row=len(entries), column=0, columnspan=2, pady=10)
     else:
-        CTkMessagebox(title="Aviso", message="No se han seleccionado filas para modificar.")
+        CTkMessagebox(title="Aviso", message="No se ha seleccionado ninguna fila para modificar.")
 
 def select_frame_by_name(name):
     home_button.configure(fg_color=("gray75", "gray25") if name == "home" else "transparent")
@@ -312,11 +360,26 @@ data_panel_inferior.grid_columnconfigure(0, weight=1)
 
 home_frame_large_image_label = ctk.CTkLabel(data_panel_superior, text="Ingresa el archivo en formato .csv",font=ctk.CTkFont(size=15, weight="bold"))
 home_frame_large_image_label.grid(row=0, column=0, padx=15, pady=15)
-home_frame_cargar_datos=ctk.CTkButton(data_panel_superior, command=seleccionar_archivo,text="Cargar Archivo",fg_color='green',hover_color='gray')
+home_frame_cargar_datos = ctk.CTkButton(
+    data_panel_superior, 
+    text="Cargar Archivo", 
+    command=seleccionar_archivo,  # Asigna directamente la función, sin lambda
+    fg_color='green', 
+    hover_color='gray'
+)
 home_frame_cargar_datos.grid(row=0, column=1, padx=15, pady=15)
 
 scrollable_frame = ctk.CTkScrollableFrame(master=data_panel_inferior)
 scrollable_frame.grid(row=0, column=0,sticky="nsew")
+
+boton_guardar = ctk.CTkButton(data_panel_superior, text="Guardar información", command=guardar_data)
+boton_guardar.grid(row=0, column=2, pady=(0, 0), padx=(10, 0))
+
+boton_modificar = ctk.CTkButton(data_panel_superior, text="Modificar dato", command=lambda: None)
+boton_modificar.grid(row=0, column=3, pady=(0, 0), padx=(10, 0))
+
+boton_eliminar = ctk.CTkButton(data_panel_superior, text="Eliminar dato", command=lambda: None, fg_color='purple', hover_color='red')
+boton_eliminar.grid(row=0, column=4, padx=(10, 0))
 
 
 

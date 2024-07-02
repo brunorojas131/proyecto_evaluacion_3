@@ -15,6 +15,9 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
 
+global row_selector
+row_selector = None
+
 def haversine(lat1, lon1, lat2, lon2):
     # Función para calcular la distancia entre 2 puntos a partir de la longitud y latitud
     R = 6371.0  # Radio de la Tierra en kilómetros
@@ -78,13 +81,11 @@ def get_country_city(lat,long):
     city = tkintermapview.convert_coordinates_to_city(lat, long)
     return country,city
 # Definir la función para convertir UTM a latitud y longitud
-def utm_to_latlong(easting, northing, zone_number, zone_letter):
-    # Crear el proyector UTM
-    utm_proj = pyproj.Proj(proj='utm', zone=zone_number, datum='WGS84')
-    
-    # Convertir UTM a latitud y longitud
-    longitude, latitude = utm_proj(easting, northing, inverse=True)
-    return round(latitude,2), round(longitude,2)
+def utm_to_latlon(easting, northing, zone):
+    utm_proj = pyproj.Proj(proj='utm', zone=zone, ellps='WGS84')
+    wgs84_proj = pyproj.Proj(proj='latlong', ellps='WGS84')
+    lon, lat = pyproj.transform(utm_proj, wgs84_proj, easting, northing)
+    return lat, lon
 def insertar_data(data:list):
     pass
     #necesitamos convertir las coordenadas UTM a lat long
@@ -134,8 +135,72 @@ def calcular_distancia(RUT1,RUT2):
 def guardar_data():
     global datos_globales
     if datos_globales is not None:
+        print("Columnas en datos_globales:", datos_globales.columns)
+        print("Primeras filas de datos_globales:")
+        print(datos_globales.head())
+        
+        # Verificar si las columnas necesarias existen
+        required_columns = ['Easting', 'Northing', 'UTM_Zone', 'RUT', 'Nombre', 'Apellido', 'Profesion', 'Estado_Emocional']
+        missing_columns = [col for col in required_columns if col not in datos_globales.columns]
+        
+        if missing_columns:
+            CTkMessagebox(title="Error", message=f"Faltan las siguientes columnas: {', '.join(missing_columns)}")
+            return
         try:
-            agregar_df_a_sqlite(datos_globales, 'progra2024_final.db', 'personas_coordenadas')
+            # Convertir coordenadas UTM a latitud y longitud
+            datos_globales['Latitude'] = None
+            datos_globales['Longitude'] = None
+            for index, row in datos_globales.iterrows():
+                lat, lon = utm_to_latlon(row['Easting'], row['Northing'], row['UTM_Zone'])
+                datos_globales.at[index, 'Latitude'] = lat
+                datos_globales.at[index, 'Longitude'] = lon
+
+            # Mostrar los datos actualizados en la tabla
+            mostrar_datos(datos_globales)
+
+            # Guardar en la base de datos
+            conn = sqlite3.connect('progra2024_final.db')
+            cursor = conn.cursor()
+
+            # Crear tabla personas si no existe
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS personas (
+                    RUT TEXT PRIMARY KEY,
+                    Nombre TEXT,
+                    Apellido TEXT,
+                    Profesion TEXT,
+                    Estado_Emocional TEXT
+                )
+            ''')
+
+            # Crear tabla coordenadas si no existe
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS coordenadas (
+                    RUT TEXT PRIMARY KEY,
+                    Easting REAL,
+                    Northing REAL,
+                    UTM_Zone INTEGER,
+                    Latitude REAL,
+                    Longitude REAL,
+                    FOREIGN KEY (RUT) REFERENCES personas (RUT)
+                )
+            ''')
+
+            # Insertar o actualizar datos
+            for _, row in datos_globales.iterrows():
+                cursor.execute('''
+                    INSERT OR REPLACE INTO personas (RUT, Nombre, Apellido, Profesion, Estado_Emocional)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (row['RUT'], row['Nombre'], row['Apellido'], row['Profesion'], row['Estado_Emocional']))
+
+                cursor.execute('''
+                    INSERT OR REPLACE INTO coordenadas (RUT, Easting, Northing, UTM_Zone, Latitude, Longitude)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (row['RUT'], row['Easting'], row['Northing'], row['UTM_Zone'], row['Latitude'], row['Longitude']))
+
+            conn.commit()
+            conn.close()
+
             CTkMessagebox(title="Éxito", message="Datos guardados correctamente en la base de datos.")
         except Exception as e:
             CTkMessagebox(title="Error", message=f"Error al guardar los datos: {str(e)}")
@@ -169,6 +234,7 @@ def leer_archivo_csv(ruta_archivo):
 
 # Función para mostrar los datos en la tabla
 def mostrar_datos(datos):
+    global row_selector, datos_globales
     if not isinstance(datos, pd.DataFrame):
         CTkMessagebox(title="Error", message="Los datos no están en el formato correcto.")
         return
@@ -188,23 +254,36 @@ def mostrar_datos(datos):
     row_selector = CTkTableRowSelector(table)
 
     # Actualizar las funciones de los botones de modificar y eliminar
-    global datos_globales  # Usar una variable global para mantener los datos
     datos_globales = datos
     
-    boton_modificar.configure(command=lambda: modificar_dato(row_selector, datos_globales))
-    boton_eliminar.configure(command=lambda: eliminar_dato(row_selector, datos_globales))
+    boton_modificar.configure(command=lambda: modificar_dato(datos_globales))
+    boton_eliminar.configure(command=lambda: eliminar_dato(datos_globales))
 
-def eliminar_dato(row_selector, datos):
-    selected_rows = row_selector.get()
-    if selected_rows:
-        if isinstance(selected_rows[0], list):
-            # Si selected_rows contiene listas, aplanamos la estructura
-            indices_to_delete = [item for sublist in selected_rows for item in sublist]
-        else:
-            indices_to_delete = selected_rows
-
-        # Convertir índices seleccionados a índices de DataFrame (restando 1)
+def eliminar_dato(datos):
+    global row_selector
+    indices_to_delete = [int(i) for i in row_selector.selected_rows]
+    print(f"Indices to delete: {indices_to_delete}")
+    if indices_to_delete:
+        # Ajustar los índices (restar 1 porque los índices de DataFrame empiezan en 0)
         indices_to_delete = [i-1 for i in indices_to_delete]
+        print(f"Adjusted indices to delete: {indices_to_delete}")
+        
+        # Eliminar las filas seleccionadas
+        datos.drop(datos.index[indices_to_delete], inplace=True)
+        
+        # Resetear el índice del DataFrame
+        datos.reset_index(drop=True, inplace=True)
+        
+        # Actualizar la tabla
+        mostrar_datos(datos)
+        
+        CTkMessagebox(title="Éxito", message=f"Se han eliminado {len(indices_to_delete)} filas.")
+    indices_to_delete = [int(i) for i in row_selector.selected_rows]
+    print(f"Indices to delete: {indices_to_delete}")
+    if indices_to_delete:
+        # Ajustar los índices (restar 1 porque los índices de DataFrame empiezan en 0)
+        indices_to_delete = [i-1 for i in indices_to_delete]
+        print(f"Adjusted indices to delete: {indices_to_delete}")
         
         # Eliminar las filas seleccionadas
         datos.drop(datos.index[indices_to_delete], inplace=True)
@@ -218,16 +297,27 @@ def eliminar_dato(row_selector, datos):
         CTkMessagebox(title="Éxito", message=f"Se han eliminado {len(indices_to_delete)} filas.")
     else:
         CTkMessagebox(title="Aviso", message="No se han seleccionado filas para eliminar.")
-def modificar_dato(row_selector, datos):
-    selected_rows = row_selector.get()
+def modificar_dato(datos):
+    global row_selector
+    selected_rows = list(row_selector.selected_rows)
+    print(f"Selected rows: {selected_rows}")
+    print(f"Type of selected_rows: {type(selected_rows)}")
+    selected_rows = list(row_selector.selected_rows)
+    print(f"Selected rows: {selected_rows}")
+    print(f"Type of selected_rows: {type(selected_rows)}")
+    
     if selected_rows:
-        if isinstance(selected_rows[0], list):
-            # Si selected_rows[0] es una lista, tomamos el primer elemento
-            row_index = selected_rows[0][0] - 1
-        else:
-            # Si es un número, lo usamos directamente
-            row_index = selected_rows[0] - 1
-
+        try:
+            row_index = int(selected_rows[0]) - 1
+        except ValueError:
+            print(f"Error: el valor '{selected_rows[0]}' no puede convertirse a entero")
+            row_index = None
+    else:
+        row_index = None
+    
+    print(f"Row index: {row_index}")
+    
+    if row_index is not None:
         if len(selected_rows) > 1:
             CTkMessagebox(title="Aviso", message="Por favor, seleccione solo una fila para modificar.")
             return
@@ -375,12 +465,11 @@ scrollable_frame.grid(row=0, column=0,sticky="nsew")
 boton_guardar = ctk.CTkButton(data_panel_superior, text="Guardar información", command=guardar_data)
 boton_guardar.grid(row=0, column=2, pady=(0, 0), padx=(10, 0))
 
-boton_modificar = ctk.CTkButton(data_panel_superior, text="Modificar dato", command=lambda: None)
+boton_modificar = ctk.CTkButton(data_panel_superior, text="Modificar dato", command=lambda: modificar_dato(datos_globales))
 boton_modificar.grid(row=0, column=3, pady=(0, 0), padx=(10, 0))
 
-boton_eliminar = ctk.CTkButton(data_panel_superior, text="Eliminar dato", command=lambda: None, fg_color='purple', hover_color='red')
+boton_eliminar = ctk.CTkButton(data_panel_superior, text="Eliminar dato", command=lambda: eliminar_dato(datos_globales), fg_color='purple', hover_color='red')
 boton_eliminar.grid(row=0, column=4, padx=(10, 0))
-
 
 
 # Crear el segundo marco
@@ -468,14 +557,8 @@ third_frame_inf.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 map_widget=mapas(third_frame_inf)
 label_rut = ctk.CTkLabel(third_frame_top, text="RUT",font=ctk.CTkFont(size=15, weight="bold"))
 label_rut.grid(row=0, column=0, padx=5, pady=5)
-optionmenu_1 = ctk.CTkOptionMenu(third_frame_top, dynamic_resizing=True,
-                                                        values=["Value 1", "Value 2", "Value Long Long Long"],command=lambda value:combo_event(value))
+optionmenu_1 = ctk.CTkOptionMenu(third_frame_top, dynamic_resizing=True,values=["Value 1", "Value 2", "Value Long Long Long"],command=lambda value:combo_event(value))
 optionmenu_1.grid(row=0, column=1, padx=5, pady=(5, 5))
-
-
-
-
-
 
 # Seleccionar el marco predeterminado
 select_frame_by_name("home")
